@@ -124,7 +124,7 @@ Args:
   - path: File path within the repo (e.g., 'src/index.ts')
   - ref: Branch, tag, or commit SHA (default: repo's default branch)
 
-Returns: Decoded file content as text.`,
+Returns: blob_sha (use this as 'sha' when updating the file) followed by decoded file content.`,
       inputSchema: z.object({
         owner: z.string(),
         repo: z.string(),
@@ -138,9 +138,9 @@ Returns: Decoded file content as text.`,
       const data = await githubRequest<FileContent>(`/repos/${owner}/${repo}/contents/${path}${query}`);
       if (data.encoding === "base64" && data.content) {
         const decoded = Buffer.from(data.content.replace(/\n/g, ""), "base64").toString("utf-8");
-        return { content: [{ type: "text", text: truncate(decoded) }] };
+        return { content: [{ type: "text", text: `blob_sha: ${data.sha}\n\n${truncate(decoded)}` }] };
       }
-      return { content: [{ type: "text", text: truncate(toText(data)) }] };
+      return { content: [{ type: "text", text: `blob_sha: ${data.sha}\n\n${truncate(toText(data))}` }] };
     }
   );
 
@@ -157,7 +157,7 @@ Args:
   - path: Directory path (use '' or '/' for root)
   - ref: Branch, tag, or commit SHA (optional)
 
-Returns: Array of files/dirs with name, type, size, path.`,
+Returns: Array of files/dirs with name, type, size, path, and blob_sha (use blob_sha as 'sha' when updating a file).`,
       inputSchema: z.object({
         owner: z.string(),
         repo: z.string(),
@@ -177,6 +177,7 @@ Returns: Array of files/dirs with name, type, size, path.`,
         type: item.type,
         path: item.path,
         size: item.size,
+        blob_sha: item.sha,
         url: item.html_url,
       }));
       return { content: [{ type: "text", text: truncate(toText(output)) }] };
@@ -196,7 +197,7 @@ Args:
   - tree_sha: Branch name or commit SHA (default: 'HEAD')
   - recursive: Whether to fetch recursively (default: true)
 
-Returns: Flat list of all files and directories with paths and types.`,
+Returns: Flat list of all files and directories with paths, types, and blob_sha (use blob_sha as 'sha' when updating a file).`,
       inputSchema: z.object({
         owner: z.string(),
         repo: z.string(),
@@ -212,7 +213,12 @@ Returns: Flat list of all files and directories with paths and types.`,
       );
       const output = {
         truncated: data.truncated,
-        files: data.tree.map((item) => ({ path: item.path, type: item.type, size: item.size })),
+        files: data.tree.map((item) => ({
+          path: item.path,
+          type: item.type,
+          size: item.size,
+          blob_sha: item.sha,
+        })),
       };
       return { content: [{ type: "text", text: truncate(toText(output)) }] };
     }
@@ -234,7 +240,7 @@ Args:
   - sha: Required when UPDATING an existing file — the blob SHA of the file being replaced
   - branch: Branch to commit to (default: repo's default branch)
 
-Returns: Commit info and file metadata.`,
+Returns: Commit info and file metadata including new blob_sha for future updates.`,
       inputSchema: z.object({
         owner: z.string(),
         repo: z.string(),
